@@ -3,6 +3,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 import pyarrow.parquet as pq
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -57,3 +58,49 @@ def test_csv_output_round_trip(tmp_path):
                 assert np.array_equal(a.astype("datetime64[ms]"), b.astype("datetime64[ms]")), (name, k)
             else:
                 assert np.array_equal(a, b.astype(a.dtype)), (name, k)
+
+
+def _sorted(out_dir, name):
+    t = {k: np.asarray(v) for k, v in B.read_table(out_dir, name).to_pydict().items()}
+    keys = [t[k] for k in ("ue_id", "sat_id", "t_idx") if k in t]
+    o = np.lexsort(keys)
+    return {k: v[o] for k, v in t.items()}
+
+
+def test_chunked_equals_single_run(tmp_path):
+    cfg = dict(B.DEFAULTS, orbit=os.path.join(ROOT, "data", "STARLINK_20250810.txt"), duration_s=900, n_ue=3,
+               lookahead_s=600)
+    _, m1, _ = B.build(dict(cfg, chunk_s=None), str(tmp_path / "one"), verbose=False)
+    _, m2, _ = B.build(dict(cfg, chunk_s=200), str(tmp_path / "chunks"), verbose=False)
+    assert m1["chunks"] == 1 and m2["chunks"] == 5
+    assert m1["validation"]["ok"] and m2["validation"]["ok"]
+    assert m1["row_counts"] == m2["row_counts"]
+    for name in ("sat_haps", "sat_ue", "haps_ue", "ue"):
+        a, b = _sorted(str(tmp_path / "one"), name), _sorted(str(tmp_path / "chunks"), name)
+        for k in a:
+            if a[k].dtype.kind == "f":
+                assert np.array_equal(a[k], b[k], equal_nan=True), (name, k)
+            else:
+                assert np.array_equal(a[k], b[k]), (name, k)
+    # RST rows that are censored only at the global end, never at an internal chunk edge
+    sh = _sorted(str(tmp_path / "chunks"), "sat_haps")
+    cens = sh["rst_status"] == 2
+    assert np.all(sh["t_idx"][cens] + sh["rst_lb_s"][cens] == 900)
+
+
+def test_too_short_lookahead_is_an_error(tmp_path):
+    cfg = dict(B.DEFAULTS, orbit=os.path.join(ROOT, "data", "STARLINK_20250810.txt"), duration_s=600, n_ue=2,
+               chunk_s=100, lookahead_s=5)
+    with pytest.raises(RuntimeError, match="lookahead"):
+        B.build(cfg, str(tmp_path), verbose=False)
+
+
+@pytest.mark.parametrize("fmt", ["parquet", "csv"])
+def test_read_table_t_max(tmp_path, fmt):
+    cfg = dict(B.DEFAULTS, orbit=os.path.join(ROOT, "data", "STARLINK_20250810.txt"), duration_s=120, n_ue=2,
+               fmt=fmt)
+    B.build(cfg, str(tmp_path), verbose=False)
+    full = B.read_table(str(tmp_path), "sat_ue")
+    part = B.read_table(str(tmp_path), "sat_ue", columns=["t_idx", "snr_sat_ue_dB"], t_max=60)
+    t = np.asarray(full.column("t_idx"))
+    assert part.num_rows == int((t < 60).sum()) > 0 and part.column_names == ["t_idx", "snr_sat_ue_dB"]

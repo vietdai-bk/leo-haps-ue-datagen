@@ -36,14 +36,9 @@ $c = 299\,792\,458$ m/s, $k_B = 1.380649\times10^{-23}$ J/K, $T_0 = 290$ K.
 
 ## 1. Bảng `sat_haps.parquet`: vệ tinh → HAPS
 
-**Một dòng** = một cặp (vệ tinh, thời điểm) mà góc ngẩng của vệ tinh nhìn từ HAPS $\ge 0^\circ$.
-
-> **Tập vệ tinh trong bảng** là các vệ tinh *ứng viên*. Đó là những vệ tinh trong cửa sổ mô phỏng có lúc
-> tiến lại đủ gần HAPS để có góc ngẩng khoảng $\ge 20^\circ$ (đúng bằng `ue_row_min_elev_deg`, có thêm biên an toàn
-> 60 km). Vì vậy:
-> - dòng có góc ngẩng $\ge 20^\circ$ là **đầy đủ**: đã kiểm tra bằng skyfield, không thiếu, không thừa;
-> - dòng có góc ngẩng từ $0^\circ$ đến $20^\circ$ **không đầy đủ**: chỉ có phần đầu và phần cuối lượt bay của các vệ tinh
->   ứng viên, không có các vệ tinh chỉ bay sát đường chân trời.
+**Một dòng** = một cặp (vệ tinh, thời điểm) mà góc ngẩng của vệ tinh nhìn từ HAPS $\ge 20^\circ$
+(`row_min_elev_deg`). Tập dòng này **đầy đủ**: đã đối chiếu với skyfield, không thiếu, không thừa,
+và không phụ thuộc cách chia khối thời gian.
 
 | Cột | Kiểu | Đơn vị | Ý nghĩa và cách tính |
 |---|---|---|---|
@@ -78,7 +73,7 @@ Các cột `rf_*` có cho **mọi dòng**, kể cả khi `available` = False, đ
 ## 2. Bảng `sat_ue.parquet`: vệ tinh → UE (truy nhập trực tiếp)
 
 **Một dòng** = một bộ (vệ tinh, UE, thời điểm) mà góc ngẩng của vệ tinh nhìn từ UE $\ge 20^\circ$
-(`ue_row_min_elev_deg`). Tập vệ tinh giống bảng `sat_haps`.
+(`row_min_elev_deg`).
 
 | Cột | Kiểu | Đơn vị | Ý nghĩa và cách tính |
 |---|---|---|---|

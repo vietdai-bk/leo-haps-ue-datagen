@@ -19,7 +19,6 @@ NB_POINTING = {300e3: (0.00035539326517870947, 1.4943027359806633),
 NB_CFSO = {(300e3, 1.0): 12497438699.677868, (530e3, 0.0): 9607550705.734255, (604e3, 30.0): 7629396224.368599}
 
 
-# ---------------- RF ----------------
 def test_fspl_known_value():
     # 1 km @ 2 GHz: 32.45 + 20log10(2000 MHz) + 20log10(1 km) = 98.47 dB
     assert np.isclose(R.fspl_db(1e3, 2e9), 32.45 + 20 * np.log10(2000), atol=0.01)
@@ -55,13 +54,13 @@ def test_p_los_limits():
 
 
 def test_haps_ue_matches_legacy_formula():
-    # same formula as network_models/RF_Link.py cal_R_HAP (40 dBm, N0 = -80.4 dBm total)
+    # legacy SAGIN HAPS formula (40 dBm, N = -80.4 dBm) plus the 30 dBi HAPS array; c = 3e8 there -> <0.01 dB
     d, z = 25e3, 20e3
     el = np.degrees(np.arcsin(z / d))
     lb = R.haps_ue_link(d, el)
     pl = 1 / (1 + 9.61 * np.exp(-0.16 * (el - 9.61)))
     eta = 20 * np.log10(4 * np.pi * 2e9 * d / 3e8) + pl * 1 + (1 - pl) * 20
-    assert np.isclose(lb["snr_dB"], 40 + 30 - eta + 80.4, atol=0.01)  # + 30 dBi HAPS array  # c=3e8 vs exact c -> <0.01 dB
+    assert np.isclose(lb["snr_dB"], 40 + 30 - eta + 80.4, atol=0.01)
 
 
 def test_fading_and_shadowing_statistics():
@@ -80,7 +79,6 @@ def test_sinr_and_capacity():
     assert R.availability([5, 15], [40, 40], 10, 30).tolist() == [False, True]
 
 
-# ---------------- FSO ----------------
 def test_pointing_error_matches_notebook():
     for L, (A0, phi0) in NB_POINTING.items():
         A, phi = F.pointing_error(L)

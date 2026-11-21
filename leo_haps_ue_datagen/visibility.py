@@ -169,7 +169,7 @@ def compute_visibility(tle_file, lat_obs=35.6762, lon_obs=139.6503, alt_obs_m=20
 
 
 def results_per_step(vis, cfso_fn=None, with_censored=False):
-    """Legacy format used by model/HAP.py:
+    """Legacy per-step format of the original SAGIN project (model/HAP.py there):
     {t: [(name, elev_deg, vt, slant_m, cfso, (E, N, U))]} for every t (empty list if none).
     cfso_fn(slant_m, zenith_deg) -> value; None leaves NaN. with_censored adds a 7th field."""
     out = {t: [] for t in range(vis.times.size)}

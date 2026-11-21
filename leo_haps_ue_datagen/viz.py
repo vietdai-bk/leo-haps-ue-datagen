@@ -15,10 +15,11 @@ EARTH_R_KM = 6371.0
 UE_STATES = ("stationary", "pedestrian", "vehicle")
 
 
-def load(out_dir, ue_cols=None):
-    """Read sat_haps / ue tables as dicts of numpy arrays (sat_ue is large and not needed here)."""
+def load(out_dir, ue_cols=None, t_max=None):
+    """Read sat_haps / ue tables as dicts of numpy arrays (sat_ue is large and not needed here).
+    t_max limits to t_idx < t_max (useful for day-long runs)."""
     from leo_haps_ue_datagen.build_dataset import read_table
-    rd = lambda n, cols=None: {k: np.asarray(v) for k, v in read_table(out_dir, n, cols).to_pydict().items()}
+    rd = lambda n, cols=None: {k: np.asarray(v) for k, v in read_table(out_dir, n, cols, t_max).to_pydict().items()}
     sh = rd("sat_haps", ["t_idx", "sat_id", "sat_x", "sat_y", "sat_z", "haps_x", "haps_y", "haps_z",
                          "elev_deg", "az_deg", "available", "rst_sat_haps_s", "rst_status", "rst_lb_s",
                          "fso_capacity_bps"])
@@ -76,8 +77,8 @@ def _frames(T, step, max_frames):
 
 def sky_animation(d, sel=None, step=10, trail_s=120, max_frames=200, elev_mask=30.0):
     """Polar sky plot seen from the HAPS: azimuth (N up, clockwise), radius = 90 - elevation.
-    Green = available (elev >= mask), grey = above horizon only; star = satellite selected by `sel`.
-    *Below ~20 deg only candidate satellites are in the dataset (see docs), so the grey ring is not complete."""
+    Green = available (elev >= mask), grey = in the dataset (elev >= 20 deg) but below the mask;
+    star = satellite selected by `sel`."""
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation
     sh = d["sat_haps"]
@@ -92,7 +93,7 @@ def sky_animation(d, sel=None, step=10, trail_s=120, max_frames=200, elev_mask=3
     ax.set_yticklabels(["90°", "60°", "30°", "0°"])
     ax.plot(np.linspace(0, 2 * np.pi, 200), np.full(200, 90 - elev_mask), "g--", lw=0.8, label=f"elev = {elev_mask:g}°")
     trail = ax.scatter([], [], s=2, c="0.75")
-    vis = ax.scatter([], [], s=10, c="0.6", label="above horizon (candidates*)")
+    vis = ax.scatter([], [], s=10, c="0.6", label="elev 20–30° (not available)")
     use = ax.scatter([], [], s=22, c="tab:green", label="available")
     star = ax.scatter([], [], s=180, marker="*", c="tab:red", zorder=5, label="selected by HAPS")
     title = ax.set_title("")

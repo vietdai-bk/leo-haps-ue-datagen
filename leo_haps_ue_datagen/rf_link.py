@@ -52,7 +52,7 @@ def p_los_al_hourani(elev_deg, a, b):
 
 
 def haps_ue_pathloss_db(d_m, elev_deg, p=HAPS_UE):
-    """Mean path loss = FSPL + P_LoS*xi_LoS + (1-P_LoS)*xi_NLoS (as report sec. 3.4 / RF_Link.py)."""
+    """Mean path loss = FSPL + P_LoS*xi_LoS + (1-P_LoS)*xi_NLoS (project report sec. 3.4)."""
     pl = p_los_al_hourani(elev_deg, p["a"], p["b"])
     return fspl_db(d_m, p["f_hz"]) + pl * p["xi_los_dB"] + (1 - pl) * p["xi_nlos_dB"]
 

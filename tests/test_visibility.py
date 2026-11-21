@@ -23,7 +23,6 @@ def small_tle(tmp_path_factory):
     return str(p)
 
 
-# ---------- run lengths / RST ----------
 def test_run_lengths_basic_and_censoring():
     m = np.array([0, 1, 1, 0, 1, 1, 1], bool)
     vt, c = V.run_lengths(m)
@@ -44,7 +43,7 @@ def test_run_lengths_matches_naive_loop():
     rng = np.random.default_rng(0)
     m = rng.random(500) > 0.3
     vt, _ = V.run_lengths(m)
-    for t in range(m.size):  # the notebook's original O(T^2) definition
+    for t in range(m.size):  # naive O(T^2) definition
         n = 0
         for k in range(t, m.size):
             if not m[k]:
@@ -53,7 +52,6 @@ def test_run_lengths_matches_naive_loop():
         assert vt[t] == n
 
 
-# ---------- timeline ----------
 def test_time_grid_exact_step():
     times, jd, fr = V.make_time_grid(START, 86400, 1.0)
     assert times.size == 86400 and np.all(np.diff(times) == 1.0)
@@ -62,7 +60,6 @@ def test_time_grid_exact_step():
     assert np.isclose((fr[-1] - fr[0]) * 86400, 86399, atol=1e-4)
 
 
-# ---------- coordinates vs independent reference (skyfield) ----------
 def test_teme_to_ecef_and_elevation_vs_skyfield():
     pytest.importorskip("skyfield.api")
     from skyfield.api import EarthSatellite, load, wgs84
@@ -98,7 +95,6 @@ def test_zenith_geometry():
     assert np.isclose(np.linalg.norm([e, n, u]), 550e3, rtol=1e-9)
 
 
-# ---------- index mapping with invalid SGP4 samples ----------
 def test_invalid_samples_do_not_shift_timeline(small_tle, monkeypatch):
     kw = dict(start_utc=START, total_seconds=7200, dt=10.0, use_parallel=False)
     good = V.compute_visibility(small_tle, **kw)
@@ -122,7 +118,6 @@ def test_invalid_samples_do_not_shift_timeline(small_tle, monkeypatch):
     assert bad.invalid_samples[name] == max(bad_t, 1)
 
 
-# ---------- visibility pipeline ----------
 def test_visibility_consistency_and_parallel_equal(small_tle):
     kw = dict(start_utc=START, total_seconds=7200, dt=10.0)
     seq = V.compute_visibility(small_tle, use_parallel=False, **kw)
@@ -146,5 +141,5 @@ def test_legacy_results_format(small_tle):
     rps = V.results_per_step(vis, cfso_fn=lambda s, z: 1.0)
     assert sorted(rps) == list(range(60))
     for rows in rps.values():
-        for name, elev, vt, slant, c, enu in rows:  # unpacking used by model/HAP.py
+        for name, elev, vt, slant, c, enu in rows:  # legacy tuple format
             assert isinstance(vt, int) and vt >= 1 and c == 1.0 and len(enu) == 3

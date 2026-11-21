@@ -61,8 +61,11 @@ python -m venv .venv
 # kiểm tra nhanh: 5 phút mô phỏng, 10 UE, vài giây
 .venv/bin/python -m leo_haps_ue_datagen.build_dataset --quick --out output/quick
 
-# kịch bản mặc định: 1 giờ, bước 1 s, 50 UE (khoảng 1 GB Parquet, 6 GB RAM, 1–2 phút)
+# kịch bản mặc định: 1 giờ, bước 1 s, 50 UE (khoảng 1 GB Parquet, ~1 phút)
 .venv/bin/python -m leo_haps_ue_datagen.build_dataset --out output/run
+
+# 1 ngày: tính theo khối 10 phút, RAM vẫn ~1.7 GB (khoảng 25 phút, ~27 GB Parquet)
+.venv/bin/python -m leo_haps_ue_datagen.build_dataset --duration 86400 --out output/day
 
 # chạy test
 .venv/bin/python -m pytest tests
@@ -84,6 +87,7 @@ Cần file **CSV** (mở bằng Excel) thay vì Parquet? Dùng [`notebooks/run_o
 | `--n-ue` | số UE |
 | `--seed` | seed ngẫu nhiên |
 | `--fmt` | `parquet` hoặc `csv` |
+| `--chunk` | số giây mỗi khối (mặc định 600; `0` = không chia) |
 | `--out` | thư mục kết quả |
 | `--quick` | chạy bản kiểm tra nhanh |
 
@@ -101,7 +105,7 @@ curl -o data/starlink_$(date -u +%Y%m%dT%H%M%SZ).json \
 
 | File | Mỗi dòng là | Nội dung chính |
 |---|---|---|
-| `sat_haps.parquet` | (vệ tinh, t), góc ngẩng nhìn từ HAPS ≥ 0° | vị trí và vận tốc vệ tinh, vị trí HAPS, khoảng cách, góc ngẩng / phương vị, `geometric_visible`, `available`, RST, backhaul **FSO** (`fso_capacity_bps`, `fso_mean_snr_dB`, `fso_gamma_max_dB`) và **RF** (`rf_snr_dB`, `rf_capacity_bps`, `rf_channel_gain`, `rf_noise_power_dBm`, `rf_bandwidth_hz`, `rf_p_max_dBm`) |
+| `sat_haps.parquet` | (vệ tinh, t), góc ngẩng nhìn từ HAPS ≥ 20° | vị trí và vận tốc vệ tinh, vị trí HAPS, khoảng cách, góc ngẩng / phương vị, `geometric_visible`, `available`, RST, backhaul **FSO** (`fso_capacity_bps`, `fso_mean_snr_dB`, `fso_gamma_max_dB`) và **RF** (`rf_snr_dB`, `rf_capacity_bps`, `rf_channel_gain`, `rf_noise_power_dBm`, `rf_bandwidth_hz`, `rf_p_max_dBm`) |
 | `sat_ue.parquet` | (vệ tinh, UE, t), góc ngẩng nhìn từ UE ≥ 20° | khoảng cách, góc ngẩng, `snr_sat_ue_dB`, `channel_gain`, `noise_power_dBm`, `bandwidth_hz`, `p_max_dBm`, `capacity_bps`, `available`, RST, ISAC bistatic |
 | `haps_ue.parquet` | (UE, t) | khoảng cách, góc ngẩng, `snr_haps_ue_dB`, các đầu vào cho power allocation, `capacity_bps`, ISAC monostatic |
 | `ue.parquet` | (UE, t) | quỹ đạo (ENU và lat/lon), vận tốc, trạng thái di chuyển, `user_type`, QoS |
@@ -119,8 +123,16 @@ curl -o data/starlink_$(date -u +%Y%m%dT%H%M%SZ).json \
   - `1`: đang phục vụ, `rst_*_s` chính xác tới 1 bước thời gian;
   - `2`: censored, vẫn phục vụ ở cuối cửa sổ; `rst_lb_s` là cận dưới.
 - Các cột SNR tính ở `p_max_dBm`. Với công suất p bất kỳ: SNR = p · `channel_gain` / nhiễu.
-- Các dòng của `sat_haps` có góc ngẩng 0–20° **không phải danh sách đầy đủ** mọi vệ tinh trên đường chân trời;
-  chỉ gồm các vệ tinh ứng viên có lúc lên tới khoảng 20°.
+- Cả hai bảng vệ tinh chỉ lưu dòng có góc ngẩng ≥ 20° (`row_min_elev_deg`). Dải này đầy đủ, không thiếu
+  vệ tinh nào (đã đối chiếu với skyfield). Ngưỡng khả dụng là 30°.
+
+**Chạy dài với RAM hạn chế.** Trục thời gian được chia thành các khối `chunk_s` (mặc định 600 s). Mỗi khối được tính,
+kiểm tra rồi ghi nối tiếp vào file, nên RAM chỉ phụ thuộc kích thước khối, không phụ thuộc tổng thời lượng
+(50 UE: khoảng 1.7 GB với khối 10 phút, khoảng 4.4 GB với khối 30 phút). Mỗi khối được tính thêm một đoạn nhìn trước
+`lookahead_s` (mặc định 600 s, dài hơn lượt bay dài nhất khoảng 4 phút) để RST không bị cắt sai ở ranh giới khối.
+Nếu đoạn nhìn trước không đủ, chương trình báo lỗi chứ không ghi dữ liệu sai. Kết quả chia khối **giống hệt từng dòng**
+với chạy một lần (có test kiểm tra). Khi chạy nhiều khối, `validation.png` chỉ vẽ khối đầu tiên.
+Dung lượng tăng theo thời lượng × số UE: khoảng 1.1 GB Parquet (hoặc ~4 GB CSV) cho mỗi giờ × 50 UE.
 
 ## Cấu trúc code
 
