@@ -71,11 +71,14 @@ def read_table(out_dir, name, columns=None):
     raise FileNotFoundError(f"{path}.parquet / {path}.csv not found")
 
 
-def _fso_rows(dist, elev):
+def _fso_rows(dist, elev, log=None):
     """FSO metrics only where the link is above the HAPS elevation mask (else NaN)."""
     n = dist.size
     cap, msnr, gmax = np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.nan)
-    for i in np.nonzero(np.isfinite(dist))[0]:
+    idx = np.nonzero(np.isfinite(dist))[0]
+    for j, i in enumerate(idx):
+        if log and j and j % max(1, idx.size // 4) == 0:
+            log(f"    FSO capacity {j}/{idx.size} rows")
         z = 90.0 - elev[i]
         cap[i] = FSO.ergodic_capacity_vec(dist[i], z)
         msnr[i] = 10 * np.log10(FSO.mean_snr(dist[i], z))
@@ -83,8 +86,14 @@ def _fso_rows(dist, elev):
     return cap, msnr, gmax
 
 
-def build(cfg, out_dir):
+def build(cfg, out_dir, verbose=True):
     t0 = time.time()
+
+    def log(msg):
+        if verbose:
+            print(f"[{time.time() - t0:7.1f} s] {msg}", flush=True)
+
+    log(f"start: {cfg['duration_s']:g} s @ dt={cfg['dt_s']:g} s, {cfg['n_ue']} UE, orbit={cfg['orbit']}")
     os.makedirs(out_dir, exist_ok=True)
     haps = HU.HAPS(**cfg["haps"])
     site = haps.position()
@@ -92,28 +101,33 @@ def build(cfg, out_dir):
 
     catalog = O.load_catalog(cfg["orbit"])
     kept, rejected = O.validate_catalog(catalog, cfg["start"], cfg["max_epoch_age_days"])
+    log(f"orbits: {len(catalog)} loaded, {len(kept)} kept, {len(rejected)} rejected")
     # candidate passes with a low mask so UEs up to ue_radius away are covered (margin_m >> radius)
     passes = O.compute_passes(kept, site, cfg["start"], cfg["duration_s"], dt,
                               min_elev_deg=cfg["ue_row_min_elev_deg"], margin_m=50e3 + cfg["ue_radius_m"])
     times = passes["times"]
     T = times.size
     sat_ids = np.unique(passes["sat_id"])
+    log(f"pass search: {sat_ids.size} candidate satellites over {T} steps")
     tracks = RST.dense_tracks(kept, sat_ids, times)                  # (S, T, 3)
     vel = np.stack([O.propagate_ecef({r.sat_id: r for r in kept}[i].satrec, times)[1] for i in sat_ids])
 
+    log("satellite tracks propagated at full resolution")
     sim = HU.simulate_ue(cfg["n_ue"], T, dt, cfg["ue_radius_m"], p_critical=cfg["p_critical"], seed=cfg["seed"])
     ue_lat, ue_lon = HU.ue_geodetic(sim["pos"], haps)                  # (T, U)
     ue_xyz = HU.ue_ecef(sim["pos"], haps)                              # (T, U, 3)
     ue_tab = HU.ue_table(sim, haps, times)
     U = cfg["n_ue"]
 
+    log(f"UE mobility simulated ({cfg['n_ue']} UE)")
     sh = RST.rst_sat_haps(tracks, *site, dt_s=dt, elev_min_deg=cfg["elev_min_haps_deg"])
     keep = np.isfinite(sh["elev"]) & (sh["elev"] >= 0)
     si, ti = np.nonzero(keep)
     d, e = sh["dist"][si, ti], sh["elev"][si, ti]
     _, _, az = pm.ecef2aer(*tracks[si, ti].T, *site)
     avail = sh["available"][si, ti]
-    cap, msnr, gmax = _fso_rows(np.where(avail, d, np.nan), e)
+    log(f"sat->HAPS: {si.size} rows, {int(avail.sum())} available -> FSO capacity")
+    cap, msnr, gmax = _fso_rows(np.where(avail, d, np.nan), e, log)
     rf = RF.sat_haps_rf_link(d, e)
     haps_xyz = haps.ecef()
     sat_haps = dict(
@@ -131,6 +145,7 @@ def build(cfg, out_dir):
         rf_bandwidth_hz=np.full(si.size, RF.SAT_HAPS_RF["B_hz"]),
         rf_p_max_dBm=np.full(si.size, RF.SAT_HAPS_RF["P_tx_dBm"]))
 
+    log("sat->HAPS done")
     el_hu, d_hu = RST.elevation_from(np.broadcast_to(haps_xyz, ue_xyz.shape), ue_xyz, ue_lat, ue_lon)  # (T,U)
     lb_hu = RF.haps_ue_link(d_hu, el_hu)
     isac_m = ISAC.sensing_metrics(ISAC.snr_monostatic_db(d_hu), ISAC.HAPS_MONO["B_hz"])
@@ -151,7 +166,10 @@ def build(cfg, out_dir):
                             "snr_sat_ue_dB", "channel_gain", "capacity_bps", "geometric_visible", "available",
                             "rst_sat_ue_s", "rst_status", "rst_lb_s", "isac_snr_dB", "isac_pd",
                             "isac_range_crlb_m", "sensing_feasible")}
+    log("HAPS->UE done; sat->UE per satellite")
     for s in range(sat_ids.size):
+        if s and s % max(1, sat_ids.size // 10) == 0:
+            log(f"    sat->UE {s}/{sat_ids.size} satellites")
         snr_fn = lambda dd, ee: RF.sat_ue_link(dd, ee)["snr_dB"]
         o = RST.rst_sat_ue(tracks[s:s + 1], ue_xyz, ue_lat, ue_lon, dt, cfg["elev_min_ue_deg"],
                            snr_fn=snr_fn, snr_min_dB=cfg["snr_min_comm_dB"])
@@ -179,10 +197,13 @@ def build(cfg, out_dir):
     sat_ue["p_max_dBm"] = np.full(n, RF.SAT_UE["P_tx_dBm"])
 
     tables = dict(sat_haps=sat_haps, sat_ue=sat_ue, haps_ue=haps_ue, ue=ue_tab)
+    log(f"sat->UE done: {n} rows; validating")
     report = validate(tables, sim, dt)
+    log(f"validation {'OK' if report['ok'] else 'FAILED'}; writing {cfg['fmt']} to {out_dir}")
 
     for name, tab in tables.items():
         _write(tab, os.path.join(out_dir, name), cfg["fmt"])
+        log(f"    wrote {name}.{cfg['fmt']} ({os.path.getsize(os.path.join(out_dir, name + '.' + cfg['fmt'])) / 1e6:.1f} MB)")
     meta = dict(
         config=cfg, units=UNITS, created_utc=str(np.datetime64("now")),
         orbit_snapshot=dict(path=cfg["orbit"], sha256=_sha256(cfg["orbit"]), n_loaded=len(catalog),
@@ -198,6 +219,7 @@ def build(cfg, out_dir):
         validation=report, build_seconds=round(time.time() - t0, 1))
     with open(os.path.join(out_dir, "metadata.json"), "w") as f:
         json.dump(meta, f, indent=2, default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o))
+    log("done")
     return tables, meta, dict(times=times, tracks=tracks, sat_ids=sat_ids, sim=sim)
 
 
