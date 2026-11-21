@@ -1,4 +1,4 @@
-"""Visualisations of a generated dataset (reads the Parquet output of build_dataset).
+"""Visualisations of a generated dataset (reads the Parquet or CSV output of build_dataset).
 
     from leo_haps_ue_datagen import viz
     d = viz.load("output/run")
@@ -10,7 +10,6 @@
 Animations are matplotlib FuncAnimation; viz.save(anim, "x.gif") writes a GIF (Pillow).
 """
 import numpy as np
-import pyarrow.parquet as pq
 
 EARTH_R_KM = 6371.0
 UE_STATES = ("stationary", "pedestrian", "vehicle")
@@ -18,8 +17,8 @@ UE_STATES = ("stationary", "pedestrian", "vehicle")
 
 def load(out_dir, ue_cols=None):
     """Read sat_haps / ue tables as dicts of numpy arrays (sat_ue is large and not needed here)."""
-    rd = lambda n, cols=None: {k: np.asarray(v) for k, v in
-                               pq.read_table(f"{out_dir}/{n}.parquet", columns=cols).to_pydict().items()}
+    from leo_haps_ue_datagen.build_dataset import read_table
+    rd = lambda n, cols=None: {k: np.asarray(v) for k, v in read_table(out_dir, n, cols).to_pydict().items()}
     sh = rd("sat_haps", ["t_idx", "sat_id", "sat_x", "sat_y", "sat_z", "haps_x", "haps_y", "haps_z",
                          "elev_deg", "az_deg", "available", "rst_sat_haps_s", "rst_status", "rst_lb_s",
                          "fso_capacity_bps"])

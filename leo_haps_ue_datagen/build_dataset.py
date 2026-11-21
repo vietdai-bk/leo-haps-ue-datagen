@@ -48,17 +48,27 @@ def _sha256(path):
 
 
 def _write(table, path, fmt):
+    import pyarrow as pa
+    t = pa.table({k: np.asarray(v) for k, v in table.items()})
     if fmt == "parquet":
-        import pyarrow as pa
         import pyarrow.parquet as pq
-        pq.write_table(pa.table({k: np.asarray(v) for k, v in table.items()}), path + ".parquet")
+        pq.write_table(t, path + ".parquet")
     else:
-        import csv
-        keys = list(table)
-        with open(path + ".csv", "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(keys)
-            w.writerows(zip(*(np.asarray(table[k]).tolist() for k in keys)))
+        import pyarrow.csv as pc
+        pc.write_csv(t, path + ".csv")
+
+
+def read_table(out_dir, name, columns=None):
+    """Read one output table (`name`.parquet or `name`.csv, whichever exists) as a pyarrow Table."""
+    path = os.path.join(out_dir, name)
+    if os.path.exists(path + ".parquet"):
+        import pyarrow.parquet as pq
+        return pq.read_table(path + ".parquet", columns=columns)
+    if os.path.exists(path + ".csv"):
+        import pyarrow.csv as pc
+        # null_values=[]: keep "nan" as float NaN (pyarrow would otherwise turn it into null -> None)
+        return pc.read_csv(path + ".csv", convert_options=pc.ConvertOptions(include_columns=columns, null_values=[]))
+    raise FileNotFoundError(f"{path}.parquet / {path}.csv not found")
 
 
 def _fso_rows(dist, elev):

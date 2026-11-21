@@ -37,3 +37,23 @@ def test_reproducible(tmp_path):
         for k in a[name]:
             x, y = np.asarray(a[name][k]), np.asarray(b[name][k])
             assert (np.array_equal(x, y, equal_nan=True) if x.dtype.kind == "f" else np.array_equal(x, y)), k
+
+
+def test_csv_output_round_trip(tmp_path):
+    cfg = dict(B.DEFAULTS, orbit=os.path.join(ROOT, "data", "STARLINK_20250810.txt"), duration_s=60, n_ue=3)
+    tables, meta, _ = B.build(dict(cfg, fmt="csv"), str(tmp_path))
+    for name in ("sat_haps", "sat_ue", "haps_ue", "ue"):
+        assert (tmp_path / f"{name}.csv").exists() and not (tmp_path / f"{name}.parquet").exists()
+        back = B.read_table(str(tmp_path), name).to_pydict()
+        assert set(back) == set(tables[name])
+        for k, v in tables[name].items():
+            a, b = np.asarray(v), np.asarray(back[k])
+            if a.dtype.kind != "M":  # to_pydict returns timestamps as datetime objects
+                assert b.dtype != object, (name, k, "NaN read back as None")
+            if a.dtype.kind == "f":
+                # whole-number floats (e.g. 4e8 Hz) are written as "400000000" and read back as int
+                assert b.dtype.kind in "fi" and np.allclose(a, b, equal_nan=True, rtol=1e-12), (name, k)
+            elif a.dtype.kind == "M":
+                assert np.array_equal(a.astype("datetime64[ms]"), b.astype("datetime64[ms]")), (name, k)
+            else:
+                assert np.array_equal(a, b.astype(a.dtype)), (name, k)

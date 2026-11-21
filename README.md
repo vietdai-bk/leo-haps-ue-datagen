@@ -72,6 +72,8 @@ python -m venv .venv
 Notebook cài thư viện, chạy test, sinh dữ liệu (bản nhanh và bản đầy đủ), xem nhanh dữ liệu, hiển thị hình động
 (bầu trời nhìn từ HAPS, UE di chuyển, quỹ đạo 3D, timeline khả dụng), rồi lưu kết quả vào Drive hoặc tải về dạng zip.
 
+Cần file **CSV** (mở bằng Excel) thay vì Parquet? Dùng [`notebooks/run_on_colab_csv.ipynb`](notebooks/run_on_colab_csv.ipynb). Notebook này giống hệt bản trên, chỉ khác định dạng lưu. CSV nặng hơn khoảng 3.7 lần: bản mặc định khoảng 4.3 GB, so với 1.2 GB của Parquet.
+
 **Tham số dòng lệnh:**
 
 | Tham số | Ý nghĩa |
