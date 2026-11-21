@@ -1,0 +1,10 @@
+numpy>=1.24
+scipy>=1.10
+sgp4>=2.22
+pymap3d>=3.0
+matplotlib>=3.7
+pyarrow>=14
+plotly>=5          # viz.orbit_3d (optional)
+# tests only
+pytest>=7
+skyfield>=1.45
